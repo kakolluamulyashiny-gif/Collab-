@@ -1,0 +1,460 @@
+/*
+Kids Learning Game Dashboard
+Single-file React component (JSX) using Tailwind CSS classes.
+
+How to use:
+1. Create a new React app (Vite or Create React App).
+2. Ensure Tailwind CSS is set up in your project (optional). If you don't have Tailwind,
+   the layout will still work but styles may differ; you can replace classes or add a small CSS file.
+3. Drop this component into src/App.jsx (or src/App.js) and run the app.
+
+Features included:
+- Responsive dashboard layout (sidebar, header, main)
+- Module cards (Math, Science, Words)
+- Quiz mini-game with levels, timer, and star rewards
+- Progress tracking saved to localStorage
+- Avatar picker and simple leaderboard (local)
+- Kid-friendly UI with animations and sound toggle (beeps)
+
+This is a single-file demo intended to be a starting point you can extend.
+*/
+
+import React, { useEffect, useState, useMemo } from "react";
+
+// Small utility: sample question banks for games
+const QUESTION_BANK = {
+  Math: [
+    { q: "2 + 3", options: [3, 4, 5, 6], a: 5 },
+    { q: "5 - 2", options: [1, 2, 3, 4], a: 3 },
+    { q: "3 x 2", options: [5, 6, 7, 8], a: 6 }
+  ],
+  Science: [
+    { q: "Which one is a planet?", options: ["Sun", "Moon", "Earth", "Shooting Star"], a: "Earth" },
+    { q: "What do plants need?", options: ["Ice cream", "Sunlight", "Batteries", "Shoes"], a: "Sunlight" }
+  ],
+  Words: [
+    { q: "Opposite of hot", options: ["warm", "cold", "mild", "spicy"], a: "cold" },
+    { q: "Cat says", options: ["woof", "meow", "moo", "baa"], a: "meow" }
+  ]
+};
+
+// Avatars (emoji-based for simplicity)
+const AVATARS = ["🦊", "🐼", "🦄", "🐵", "🐯"];
+
+function useLocalState(key, initial) {
+  const [state, setState] = useState(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : initial;
+    } catch (e) {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch (e) {}
+  }, [key, state]);
+  return [state, setState];
+}
+
+export default function App() {
+  const [route, setRoute] = useState("dashboard");
+  const [selectedModule, setSelectedModule] = useState("Math");
+  const [profile, setProfile] = useLocalState("klg_profile", { name: "Player", avatar: AVATARS[0] });
+  const [progress, setProgress] = useLocalState("klg_progress", { Math: 0, Science: 0, Words: 0 });
+  const [leaderboard, setLeaderboard] = useLocalState("klg_leaderboard", []);
+  const [soundOn, setSoundOn] = useLocalState("klg_sound", true);
+
+  useEffect(() => {
+    // Add this player to leaderboard if not exists
+    setLeaderboard((prev) => {
+      const exists = prev.find((p) => p.name === profile.name);
+      if (exists) return prev;
+      return [...prev, { name: profile.name, avatar: profile.avatar, stars: totalStars(progress) }];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // keep leaderboard stars up-to-date
+    setLeaderboard((prev) => prev.map((p) => (p.name === profile.name ? { ...p, stars: totalStars(progress) } : p)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress]);
+
+  function totalStars(p) {
+    return (p.Math || 0) + (p.Science || 0) + (p.Words || 0);
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white text-slate-800">
+      <div className="max-w-6xl mx-auto p-4">
+        <div className="flex gap-4">
+          <Sidebar
+            route={route}
+            setRoute={setRoute}
+            profile={profile}
+            setProfile={setProfile}
+            soundOn={soundOn}
+            setSoundOn={setSoundOn}
+            setSelectedModule={setSelectedModule}
+          />
+
+          <main className="flex-1 bg-white rounded-2xl shadow-lg p-6">
+            <Header profile={profile} totalStars={totalStars(progress)} />
+
+            {route === "dashboard" && (
+              <Dashboard
+                setRoute={setRoute}
+                setSelectedModule={setSelectedModule}
+                progress={progress}
+                profile={profile}
+              />
+            )}
+
+            {route === "play" && (
+              <GameArea
+                module={selectedModule}
+                onBack={() => setRoute("dashboard")}
+                progress={progress}
+                setProgress={setProgress}
+                soundOn={soundOn}
+              />
+            )}
+
+            {route === "leaderboard" && <Leaderboard board={leaderboard} profile={profile} />}
+
+            {route === "profile" && (
+              <ProfileEditor profile={profile} setProfile={setProfile} setLeaderboard={setLeaderboard} />
+            )}
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({ route, setRoute, profile, setProfile, soundOn, setSoundOn, setSelectedModule }) {
+  return (
+    <aside className="w-64 p-4 bg-gradient-to-b from-white to-blue-50 rounded-2xl shadow-inner flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <div className="text-4xl">{profile.avatar}</div>
+        <div>
+          <div className="font-bold">{profile.name}</div>
+          <div className="text-xs text-slate-500">Junior Explorer</div>
+        </div>
+      </div>
+
+      <nav className="flex-1">
+        <NavButton label="Dashboard" active={route === "dashboard"} onClick={() => setRoute("dashboard")} />
+        <NavButton
+          label="Play"
+          active={route === "play"}
+          onClick={() => {
+            setSelectedModule("Math");
+            setRoute("play");
+          }}
+        />
+        <NavButton label="Leaderboard" active={route === "leaderboard"} onClick={() => setRoute("leaderboard")} />
+        <NavButton label="Profile" active={route === "profile"} onClick={() => setRoute("profile")} />
+      </nav>
+
+      <div className="flex items-center justify-between">
+        <div className="text-sm">Sound</div>
+        <button
+          onClick={() => setSoundOn(!soundOn)}
+          className={`px-3 py-1 rounded-lg font-medium ${soundOn ? "bg-yellow-300" : "bg-gray-200"}`}>
+          {soundOn ? "On" : "Off"}
+        </button>
+      </div>
+
+      <small className="text-xs text-slate-500">Designed for curious kids • Play & Learn</small>
+    </aside>
+  );
+}
+
+function NavButton({ label, active, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left py-2 px-3 rounded-xl mb-2 ${active ? "bg-indigo-200 font-semibold" : "hover:bg-slate-100"}`}>
+      {label}
+    </button>
+  );
+}
+
+function Header({ profile, totalStars }) {
+  return (
+    <header className="flex items-center justify-between mb-6">
+      <div>
+        <h1 className="text-2xl font-extrabold">Welcome back, {profile.name} 🎉</h1>
+        <p className="text-sm text-slate-500">Keep exploring — little wins add up!</p>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-xl">
+          <span className="text-xl">⭐</span>
+          <div className="text-sm">Stars {totalStars}</div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Dashboard({ setRoute, setSelectedModule, progress, profile }) {
+  const modules = ["Math", "Science", "Words"];
+  return (
+    <section>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {modules.map((m) => (
+          <ModuleCard
+            key={m}
+            name={m}
+            progress={progress[m] || 0}
+            onPlay={() => {
+              setSelectedModule(m);
+              setRoute("play");
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="bg-gradient-to-r from-indigo-50 to-white p-4 rounded-xl shadow-sm">
+        <h3 className="font-bold mb-2">Daily mission</h3>
+        <p className="text-sm text-slate-600">Play one quiz in any module and earn at least 1 star!</p>
+        <div className="mt-3">
+          <button className="px-4 py-2 rounded-full bg-indigo-600 text-white" onClick={() => {
+            setSelectedModule("Math");
+            setRoute("play");
+          }}>Start Mission</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ModuleCard({ name, progress, onPlay }) {
+  return (
+    <div className="p-4 rounded-xl border border-slate-100 shadow-sm bg-white">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="font-bold text-lg">{name}</div>
+          <div className="text-xs text-slate-500">Fun lessons & quick quizzes</div>
+        </div>
+        <div className="text-3xl">{name === "Math" ? "➗" : name === "Science" ? "🔬" : "📝"}</div>
+      </div>
+
+      <div className="mb-3">
+        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+          <div className="h-full rounded-full bg-indigo-400" style={{ width: `${Math.min(progress * 10, 100)}%` }} />
+        </div>
+        <div className="text-xs mt-2 text-slate-500">Progress: {progress}★</div>
+      </div>
+
+      <div className="flex gap-2">
+        <button onClick={onPlay} className="px-3 py-1 bg-indigo-600 text-white rounded-lg">Play</button>
+        <button className="px-3 py-1 border rounded-lg">Preview</button>
+      </div>
+    </div>
+  );
+}
+
+function GameArea({ module, onBack, progress, setProgress, soundOn }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-bold text-xl">Play — {module}</h2>
+        <div className="flex gap-2">
+          <button onClick={onBack} className="px-3 py-1 rounded-lg border">Back</button>
+        </div>
+      </div>
+
+      <QuizGame
+        module={module}
+        onComplete={(stars) => {
+          // increment progress by stars
+          setProgress((p) => ({ ...p, [module]: (p[module] || 0) + stars }));
+          // small celebration
+          if (soundOn) playBeep();
+        }}
+      />
+    </div>
+  );
+}
+
+function QuizGame({ module, onComplete }) {
+  const bank = useMemo(() => QUESTION_BANK[module] || [], [module]);
+  const [index, setIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [selected, setSelected] = useState(null);
+  const [showResult, setShowResult] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(15);
+
+  useEffect(() => {
+    setIndex(0);
+    setScore(0);
+    setSelected(null);
+    setShowResult(false);
+  }, [module]);
+
+  useEffect(() => {
+    if (showResult) return;
+    if (timeLeft <= 0) {
+      setShowResult(true);
+      return;
+    }
+    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [timeLeft, showResult]);
+
+  if (!bank.length) return <div>No questions in this module yet.</div>;
+
+  const q = bank[index];
+
+  function answer(opt) {
+    if (showResult) return;
+    setSelected(opt);
+    const correct = opt === q.a;
+    if (correct) setScore((s) => s + 1);
+    setShowResult(true);
+  }
+
+  function next() {
+    const nextIndex = index + 1;
+    if (nextIndex >= bank.length) {
+      // finish
+      const stars = Math.max(1, Math.round((score / bank.length) * 3));
+      onComplete(stars);
+      // reset for next time
+      setIndex(0);
+      setScore(0);
+      setShowResult(false);
+      setSelected(null);
+      setTimeLeft(15);
+      alert(`Great! You earned ${stars} star(s)`);
+      return;
+    }
+    setIndex(nextIndex);
+    setSelected(null);
+    setShowResult(false);
+    setTimeLeft(15);
+  }
+
+  return (
+    <div className="p-4 bg-gradient-to-b from-white to-indigo-50 rounded-xl">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm text-slate-600">Question {index + 1} / {bank.length}</div>
+        <div className="text-sm">⏱️ {timeLeft}s</div>
+      </div>
+
+      <div className="mb-4">
+        <div className="text-lg font-semibold">{q.q}</div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {q.options.map((opt) => {
+          const correct = opt === q.a;
+          const isSelected = selected === opt;
+          const bg = showResult ? (correct ? "bg-green-200" : isSelected ? "bg-red-200" : "bg-white") : "bg-white";
+          return (
+            <button
+              key={String(opt)}
+              onClick={() => answer(opt)}
+              className={`p-3 rounded-xl border ${bg} text-left hover:scale-[1.01] transition`}>
+              {String(opt)}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-end mt-4">
+        {showResult ? (
+          <button onClick={next} className="px-4 py-2 bg-indigo-600 text-white rounded-lg">{index + 1 >= bank.length ? "Finish" : "Next"}</button>
+        ) : (
+          <div className="text-sm text-slate-500">Choose an answer</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Leaderboard({ board, profile }) {
+  const sorted = [...board].sort((a, b) => b.stars - a.stars);
+  return (
+    <div>
+      <h3 className="font-bold mb-3">Local Leaderboard</h3>
+      <div className="space-y-2">
+        {sorted.map((p, i) => (
+          <div key={p.name} className={`flex items-center justify-between p-3 rounded-lg ${p.name === profile.name ? "bg-yellow-50" : "bg-white"}`}>
+            <div className="flex items-center gap-3">
+              <div className="text-2xl">{p.avatar}</div>
+              <div>
+                <div className="font-semibold">{p.name}</div>
+                <div className="text-xs text-slate-500">Rank #{i + 1}</div>
+              </div>
+            </div>
+            <div className="text-sm">Stars {p.stars}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProfileEditor({ profile, setProfile, setLeaderboard }) {
+  const [name, setName] = useState(profile.name);
+  const [avatar, setAvatar] = useState(profile.avatar);
+
+  function save() {
+    setProfile({ name, avatar });
+    setLeaderboard((prev) => {
+      const existing = prev.filter((p) => p.name !== profile.name);
+      return [...existing, { name, avatar, stars: (prev.find((p) => p.name === profile.name) || {}).stars || 0 }];
+    });
+    alert("Profile saved!");
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="font-bold">Edit Profile</h3>
+      <div className="flex items-center gap-3">
+        <div className="text-5xl">{avatar}</div>
+        <input value={name} onChange={(e) => setName(e.target.value)} className="border p-2 rounded-lg" />
+      </div>
+
+      <div>
+        <div className="text-sm mb-2">Choose Avatar</div>
+        <div className="flex gap-2">
+          {AVATARS.map((a) => (
+            <button key={a} onClick={() => setAvatar(a)} className={`p-3 rounded-lg ${avatar === a ? "bg-indigo-100" : "bg-white"}`}>{a}</button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <button onClick={save} className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Save Profile</button>
+      </div>
+    </div>
+  );
+}
+
+// tiny beep for wins (uses WebAudio API)
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    g.gain.value = 0.1;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    setTimeout(() => {
+      o.stop();
+      ctx.close();
+    }, 150);
+  } catch (e) {
+    // ignore on unsupported
+  }
+}
+      
